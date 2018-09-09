@@ -12,41 +12,29 @@
 #include "pru_ioctl.h"
 #include "sharedVariables.h"
 #include "lfsr.h"
+#include "parseLibrary.h"
+#include "constants.h"
 
 #define DATA_LENGHT SHBUF0_SIZE
 
-void makePerfect(char * temp, int len, lfsr_t * rand)
-{
-    while(len--){
-        *(uint32_t*)temp = (rand->data & 0xFF);
-        GLFSR_next(rand);
-        temp = temp+1;
-    }
-}
-
-
+uint32_t totalTransfered = 0; //includes all of the bytes which are transfered to date. 
 
 int main(int argc, char *argv[])
 {
     char * shbuf_loc = "/dev/shbuf";
     char * pru_loc   = "/dev/pru_ctrl";
    
-    lfsr_t glfsr_d0;
-    uint32_t sigmaRead = 0;
-    uint64_t poly = 0x1081;
-    GLFSR_init(&glfsr_d0, poly, 0xdeadbeef);
-   
-    char transfered[SHBUF0_SIZE];
-    char calculated[SHBUF0_SIZE];
+    //copy from kernal space a buffer into this guy
+    char tempBuf[TOTAL_BYTES_IN_SECTOR];
     
     u_int32_t t;
-    uint32_t readSize;
-    uint32_t readTotal; //how much we actually read when we requested... might not always be the saem ;)
-    
+    u_int32_t counter;
+    u_int32_t retVal;
     
     FILE * fds;
     FILE * fdp;
-
+    FILE *ptr_myfile;
+    
     fds = open(shbuf_loc, O_RDWR);
     if (fds == -1)
     {
@@ -60,6 +48,16 @@ int main(int argc, char *argv[])
         perror("could not open pru driver");
         return 2;
     }
+    
+
+/*
+	ptr_myfile=fopen("log.bin","wb");
+	if (!ptr_myfile)
+	{
+		printf("Unable to open file!");
+		return 1;
+	}
+  */  
 
     int q;
 
@@ -75,40 +73,28 @@ int main(int argc, char *argv[])
 
     printf("reading some bytes..\n"); 
 
-
     do{
-        readSize = glfsr_d0.data%SHBUF0_SIZE;
         
-        printf("Trying to read %d bytes!! \n", readSize);
+        sleep(1);
         
-        readTotal = read(fds, transfered, readSize);  
+        retVal = read(fds, tempBuf, TOTAL_BYTES_IN_SECTOR);  
+                
+        if(retVal)
+        {            
+            for(counter = 0; counter < TOTAL_BYTES_IN_SECTOR; counter++)
+            {
+                totalTransfered++;
+                processIncomingData(tempBuf[counter]);
+            }
+                       
+        }           
         
-        sigmaRead = sigmaRead + readTotal;
-        
-        printf("Read %d Bytes!! \n", readTotal);
-        
-        printf("Read total of  %d Bytes!! \n", sigmaRead);
-    
-        makePerfect(calculated, readTotal, &glfsr_d0);
-        
+    }while(1);  
 
-        q = memcmp(calculated, transfered, readTotal);
-
-        
-        if(q){
-            printf("Failed to get a match! \n");
-            break;
-        }
-        
-        printf("Read checked out!! \n");
-        printf("\n");
-       
-                    
-    }while(1);
-    
 
     close(fds);
     close(fdp);
-    
+    //close(ptr_myfile);
+       
     return 0;
 }
